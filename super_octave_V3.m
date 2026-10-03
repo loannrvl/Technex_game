@@ -282,7 +282,7 @@ clear; clc; close all;
 
 % ---- Parameters ---------------------------------------------------------
 nLevels     = 5;       % number of levels
-startLevel  = 3;       % first level (use 5 to test the boss quickly, then put 1 back)
+startLevel  = 1;       % first level (use 5 to test the boss quickly, then put 1 back)
 startLives  = 5;       % hearts at the beginning of the game
 maxLives    = 7;       % maximum number of hearts
 bookRatios  = [0.50 0.60 0.65 0.70 0.75];  % share of books needed to open the flag
