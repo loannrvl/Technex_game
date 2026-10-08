@@ -9,7 +9,7 @@
 % CONTRIBUTION: equal work by both authors: finding and testing errors, correcting
 %               the code, thinking about and adding improvements
 % DATE        : 2026-10-08 (format yyyy-mm-dd: year-month-day)
-% OCTAVE      : version 10.1.0 / CODE VERSION : 6.1
+% OCTAVE      : version 10.1.0 / CODE VERSION : 6.2
 % SOURCES     : AI (Claude, ChatGPT) used to write a large part of the code; the authors
 %               tested the game, found errors, chose the changes and improvements, and
 %               checked and adapted the code; no image, no sound file, no word list
@@ -55,6 +55,9 @@
 %                   the game simply runs without sound. If playing the effects slows the
 %                   game down on a computer, the effects are turned off automatically
 %                   (the music keeps playing) so that the game stays smooth.
+%                   Starting a sound takes a moment, so each music is made 5 minutes long
+%                   (it almost never has to restart during a level) and it starts during
+%                   the level screen, not during the game.
 % WAYS TO MOVE    : LEFT/RIGHT arrows (or Q/D, AZERTY keyboard) to run, UP arrow (or Z,
 %                   SPACE) to jump, P to pause, ESC to stop the game at any time,
 %                   R to replay and Q to quit at the end of the game
@@ -375,7 +378,7 @@ function th = music_theme(level)
   endswitch
 endfunction
 
-% ---- Function: compute the sound of one music (the pattern is played twice)
+% ---- Function: compute the sound of one music pattern (about 15 s)
 function y = render_music(th, fs)
   stepDur = 30 / th.bpm;                        % one eighth note (s)
   stepN   = round(stepDur * fs);
@@ -403,15 +406,16 @@ function y = render_music(th, fs)
     mix(idx) = mix(idx) + note;
   endfor
   mix = mix(1:nStep * stepN);
-  y   = [mix; mix];                             % play the pattern twice (fewer restarts)
-  y   = y / max(1, max(abs(y)));                % never above 1 (no distortion)
+  y   = mix / max(1, max(abs(mix)));            % never above 1 (no distortion)
 endfunction
 
 % ---- Function: prepare all the music and sound effects ------------------
 % If the computer has no audio device, audio.ok is false and the game stays silent.
+% Each music is one pattern repeated to last musicLen seconds (long = it almost never
+% has to be restarted during a level, and every restart can freeze the game a moment).
 % Each effect gets 2 players (copies): if one is still playing, the other one is used,
 % so a sound never has to be stopped and restarted (that is what froze the game).
-function audio = audio_init(fs)
+function audio = audio_init(fs, musicFs, musicLen)
   audio.ok       = false;
   audio.fs       = fs;
   audio.music    = cell(1, 5);
@@ -419,9 +423,11 @@ function audio = audio_init(fs)
   audio.sfx      = struct();
   try
     for lv = 1:5
-      y = 0.7 * render_music(music_theme(lv), fs);
-      audio.music{lv}    = audioplayer(y, fs);
-      audio.musicDur(lv) = numel(y) / fs;
+      pattern = 0.7 * render_music(music_theme(lv), musicFs);
+      nRep    = ceil(musicLen * musicFs / numel(pattern));  % repeat the pattern to last musicLen s
+      y       = int16(32767 * repmat(pattern, nRep, 1));    % int16 = 4 times less memory than double
+      audio.music{lv}    = audioplayer(y, musicFs);
+      audio.musicDur(lv) = numel(y) / musicFs;
     endfor
     sfx   = make_sfx(fs);
     names = fieldnames(sfx);
@@ -770,7 +776,9 @@ jumpSpeed   = 1.6;     % initial speed of a jump
 maxSpeed    = 0.6;     % running speed (lower = slower)
 coffeeTime  = 250;     % invincibility duration (frames)
 framePause  = 0.025;   % duration of one frame (s): 0.025 = 40 images per second
-audioFs     = 22050;   % sound quality (samples per second)
+audioFs     = 22050;   % sound quality of the effects (samples per second)
+musicFs     = 11025;   % sound quality of the music (lower = less memory, fine for 8-bit music)
+musicLen    = 120;     % length of each music (s): 5 minutes, so it almost never restarts
 virPts      = [100 100 500 150];  % points for each virus type (green, red, boss, flying)
 skyColors   = [0.45 0.75 1.00; 0.55 0.85 0.65; 0.95 0.70 0.45; 0.55 0.35 0.65; 0.10 0.10 0.25];
 levelNames  = {'Kindergarten', 'Primary school', 'Middle school', 'High school', 'University'};
@@ -851,7 +859,7 @@ setappdata(fig, 'screenShown', false);          % true while a text screen is di
 
 % ---- Sound: compute the music and the sound effects ----------------------
 disp('Preparing the sounds...');
-audio = audio_init(audioFs);                    % audio.ok is false if there is no audio device
+audio = audio_init(audioFs, musicFs, musicLen); % audio.ok is false if there is no audio device
 setappdata(fig, 'audio', audio);
 setappdata(fig, 'musicOn', true);               % sound settings (keys M and E)
 setappdata(fig, 'sfxOn', true);
@@ -940,6 +948,7 @@ while keepPlaying && ishandle(fig)
     foldX   = foldX0 * sc;                      % scaled central fold
     foldY   = foldY0 * sc;
 
+    music_start(fig, level);                    % the music starts during the level screen
     show_screen(ax, sprintf('LEVEL %d / %d', level, nLevels), levelNames{level}, ...
                 {{'', {'Books to collect', sprintf('%d of %d', booksNeeded, nBooks)}, ...
                   {'Hearts left', sprintf('%d', lives)}}}, ...
@@ -1099,7 +1108,6 @@ while keepPlaying && ishandle(fig)
     setappdata(fig, 'jumpRequested', false);
     setappdata(fig, 'keys', [false false]);     % avoid a key stuck from the previous level
     setappdata(fig, 'paused', false);
-    music_start(fig, level);                    % the music of this level starts
     levelTimer = tic();                         % level timer (time bonus)
     lastTic    = tic();                         % frame timer (steady speed)
 
@@ -1452,7 +1460,7 @@ while keepPlaying && ishandle(fig)
         hudDrawn = hud;
       endif
 
-      % Music: restart it when it is finished (loop), with a timer
+      % Music: restart it if it is finished (only after 5 minutes in the same level)
       music_loop(fig);
 
       drawnow();
