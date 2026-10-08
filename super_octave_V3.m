@@ -7,7 +7,7 @@
 %               clouds with parallax give a pseudo-3D look)
 % AUTHORS     : [Loann RAVEL] (...), [Loic LOBLOT] (...)
 % DATE        : [2026-10-01] (format yyyy-mm-dd: year-month-day)
-% OCTAVE      : version [10.1.0] / CODE VERSION : 2.1
+% OCTAVE      : version [10.1.0] / CODE VERSION : 3.0
 % SOURCES     : [AI used (Claude, ChatGPT) for code structure, checked and adapted by authors];
 %               no image, no sound, no word list (all graphics are drawn with code)
 %
