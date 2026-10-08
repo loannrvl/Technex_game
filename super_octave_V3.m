@@ -1,5 +1,5 @@
 % ========================================================================
-% PROGRAM     : super_brain_VF.m
+% PROGRAM     : super_brain_V3.m
 % GOAL        : Guide a brain through 5 school levels (Kindergarten to University): collect
 %               books, cross holes using stones and moving platforms, avoid spikes and viruses,
 %               drink coffee to become invincible, beat the final boss and open the flag
