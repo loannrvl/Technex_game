@@ -4,7 +4,7 @@
 % CONTEXT     : Octave course project, 2.5D platformer
 % AUTHORS     : [Loann RAVEL] (...), [Loïc LOBLOT] (...)
 % DATE        : [2026-10-1]
-% OCTAVE      : version [2.50.1] / CODE VERSION : 1.2
+% OCTAVE      : version [2.50.1] / CODE VERSION : 2.0
 % SOURCES     : [AI used (Claude, ChatGPT) for code structure, checked and adapted by authors];
 %               no image, no sound, no word list
 %
