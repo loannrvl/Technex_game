@@ -1,5 +1,5 @@
 % ========================================================================
-% PROGRAM     : super_octave_V1-LR.m
+% PROGRAM     : super_octave_V1.1.m
 % GOAL        : Run and jump through 5 levels, stomp enemies, collect coins, reach the flag
 % CONTEXT     : Octave course project, 2.5D platformer
 % AUTHORS     : [Loann RAVEL] (...), [Loïc LOBLOT] (...)
