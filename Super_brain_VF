@@ -1,5 +1,5 @@
 % ========================================================================
-% PROGRAM     : super_brain_Vf.m
+% PROGRAM     : super_brain_VF.m
 % GOAL        : Guide a brain through 5 school levels (Kindergarten to University): collect
 %               books, cross holes using stones and moving platforms, avoid spikes and viruses,
 %               drink coffee to become invincible, beat the final boss and open the flag
@@ -9,7 +9,7 @@
 % CONTRIBUTION: equal work by both authors: finding and testing errors, correcting
 %               the code, thinking about and adding improvements
 % DATE        : 2026-10-08 (format yyyy-mm-dd: year-month-day)
-% OCTAVE      : version 10.1.0 / CODE VERSION : 6.0
+% OCTAVE      : version 10.1.0 / CODE VERSION : 6.1
 % SOURCES     : AI (Claude, ChatGPT) used to write a large part of the code; the authors
 %               tested the game, found errors, chose the changes and improvements, and
 %               checked and adapted the code; no image, no sound file, no word list
@@ -52,7 +52,9 @@
 %                   level complete, game over, win. M = music on/off, E = effects on/off,
 %                   P = pause (the pause screen shows the sound menu),
 %                   O on the title screen = sound options. If no audio device is found,
-%                   the game simply runs without sound.
+%                   the game simply runs without sound. If playing the effects slows the
+%                   game down on a computer, the effects are turned off automatically
+%                   (the music keeps playing) so that the game stays smooth.
 % WAYS TO MOVE    : LEFT/RIGHT arrows (or Q/D, AZERTY keyboard) to run, UP arrow (or Z,
 %                   SPACE) to jump, P to pause, ESC to stop the game at any time,
 %                   R to replay and Q to quit at the end of the game
@@ -243,7 +245,11 @@ endfunction
 % =========================================================================
 %  SOUND: everything is computed by the program (no sound file)
 %  A sound is a column vector of numbers between -1 and 1 (one number = one
-%  sample, fs samples per second). audioplayer plays it, stop() stops it.
+%  sample, fs samples per second). audioplayer plays it.
+%  To keep the game smooth: a playing sound is NEVER stopped to be restarted
+%  (stop() can freeze the game on some computers), each effect has 2 copies,
+%  the music loop uses a timer instead of asking the sound card, and the
+%  effects are turned off automatically if playing them is too slow.
 % =========================================================================
 
 % ---- Function: basic wave shape (ph = phase in radians) ----------------
@@ -402,20 +408,26 @@ function y = render_music(th, fs)
 endfunction
 
 % ---- Function: prepare all the music and sound effects ------------------
-% If the computer has no audio device, audio.ok is false and the game stays silent
+% If the computer has no audio device, audio.ok is false and the game stays silent.
+% Each effect gets 2 players (copies): if one is still playing, the other one is used,
+% so a sound never has to be stopped and restarted (that is what froze the game).
 function audio = audio_init(fs)
-  audio.ok    = false;
-  audio.fs    = fs;
-  audio.music = cell(1, 5);
-  audio.sfx   = struct();
+  audio.ok       = false;
+  audio.fs       = fs;
+  audio.music    = cell(1, 5);
+  audio.musicDur = zeros(1, 5);                 % length of each music (s), for the loop timer
+  audio.sfx      = struct();
   try
     for lv = 1:5
-      audio.music{lv} = audioplayer(0.7 * render_music(music_theme(lv), fs), fs);
+      y = 0.7 * render_music(music_theme(lv), fs);
+      audio.music{lv}    = audioplayer(y, fs);
+      audio.musicDur(lv) = numel(y) / fs;
     endfor
     sfx   = make_sfx(fs);
     names = fieldnames(sfx);
     for i = 1:numel(names)
-      audio.sfx.(names{i}) = audioplayer(sfx.(names{i}), fs);
+      v = sfx.(names{i});
+      audio.sfx.(names{i}) = {audioplayer(v, fs), audioplayer(v, fs)};  % 2 copies
     endfor
     audio.ok = true;
   catch err
@@ -425,6 +437,9 @@ function audio = audio_init(fs)
 endfunction
 
 % ---- Function: play a sound effect (nothing if effects are off) ---------
+% A free copy of the sound is played; if both copies are busy, the sound is skipped.
+% If play() takes too long (slow audio driver), the effects are turned off after a
+% few slow calls so the game does not freeze any more.
 function play_sfx(fig, name)
   if ~ishandle(fig) || ~getappdata(fig, 'sfxOn')
     return;
@@ -433,19 +448,35 @@ function play_sfx(fig, name)
   if ~audio.ok
     return;
   endif
+  pool = audio.sfx.(name);
+  t0   = tic();
   try
-    p = audio.sfx.(name);
-    if isplaying(p)
-      stop(p);                                  % restart if still playing
-    endif
-    play(p);
+    for k = 1:numel(pool)
+      if ~isplaying(pool{k})
+        play(pool{k});                          % free copy: play it (never stop a sound)
+        break;
+      endif
+    endfor
   catch
-    % a sound problem must never stop the game
+    setappdata(fig, 'sfxOn', false);            % a sound problem must never stop the game
+    setappdata(fig, 'sfxAutoOff', true);
+    setappdata(fig, 'menuDirty', true);
+    return;
   end_try_catch
+  if toc(t0) > 0.05                             % the game waited more than 50 ms for the sound
+    nSlow = getappdata(fig, 'sfxSlow') + 1;
+    setappdata(fig, 'sfxSlow', nSlow);
+    if nSlow >= 3                               % 3 slow sounds: effects off, game stays smooth
+      setappdata(fig, 'sfxOn', false);
+      setappdata(fig, 'sfxAutoOff', true);
+      setappdata(fig, 'menuDirty', true);
+    endif
+  endif
 endfunction
 
-% ---- Function: start / stop / keep looping the music of the current track
-% track = 0: no music. Called when a level starts, ends, and every few frames.
+% ---- Function: start or stop the music to match the settings ------------
+% musicTrack = music wanted (0 = none), musicPlaying = music really playing.
+% The sound card is only used when something must change.
 function music_apply(fig)
   if ~ishandle(fig)
     return;
@@ -454,21 +485,39 @@ function music_apply(fig)
   if ~audio.ok
     return;
   endif
-  track = getappdata(fig, 'musicTrack');
-  on    = getappdata(fig, 'musicOn');
-  for k = 1:numel(audio.music)
-    p = audio.music{k};
-    try
-      if k == track && on
-        if ~isplaying(p)
-          play(p);                              % (re)start = loop
-        endif
-      elseif isplaying(p)
-        stop(p);
-      endif
-    catch
-    end_try_catch
-  endfor
+  want = getappdata(fig, 'musicTrack') * getappdata(fig, 'musicOn');  % 0 if music is off
+  cur  = getappdata(fig, 'musicPlaying');
+  if want == cur
+    return;                                     % nothing to change
+  endif
+  try
+    if cur > 0
+      stop(audio.music{cur});                   % old music off
+    endif
+    if want > 0
+      play(audio.music{want});                  % new music on
+      setappdata(fig, 'musicTic', tic());       % start time (for the loop)
+    endif
+  catch
+  end_try_catch
+  setappdata(fig, 'musicPlaying', want);
+endfunction
+
+% ---- Function: loop the music (called every frame) ----------------------
+% Uses a timer: the music is restarted when its length has passed
+% (no question to the sound card at each frame = no slowdown)
+function music_loop(fig)
+  cur = getappdata(fig, 'musicPlaying');
+  if cur > 0
+    audio = getappdata(fig, 'audio');
+    if toc(getappdata(fig, 'musicTic')) >= audio.musicDur(cur)
+      try
+        play(audio.music{cur});                 % the music is finished: play it again
+      catch
+      end_try_catch
+      setappdata(fig, 'musicTic', tic());
+    endif
+  endif
 endfunction
 
 % ---- Function: choose the music of a level (0 = silence) -----------------
@@ -488,7 +537,10 @@ function audio_stop_all(audio)
     endfor
     names = fieldnames(audio.sfx);
     for i = 1:numel(names)
-      stop(audio.sfx.(names{i}));
+      pool = audio.sfx.(names{i});
+      for k = 1:numel(pool)
+        stop(pool{k});
+      endfor
     endfor
   catch
   end_try_catch
@@ -501,6 +553,8 @@ function toggle_sound(fig, name)
   if strcmp(name, 'musicOn')
     music_apply(fig);
   elseif getappdata(fig, 'sfxOn')
+    setappdata(fig, 'sfxSlow', 0);              % effects turned on again by the player
+    setappdata(fig, 'sfxAutoOff', false);
     play_sfx(fig, 'blip');                      % small sound = feedback
   endif
 endfunction
@@ -523,6 +577,8 @@ function s = pause_text(fig)
   audio = getappdata(fig, 'audio');
   if ~audio.ok
     s = [s, {'', '(no audio device found)'}];
+  elseif getappdata(fig, 'sfxAutoOff')
+    s = [s, {'', '(effects turned off: too slow on this computer)'}];
   endif
 endfunction
 
@@ -683,6 +739,8 @@ function key = sound_menu(fig, ax)
     audio = getappdata(fig, 'audio');
     if ~audio.ok
       rows = [rows, {'', 'No audio device found: the game is silent'}];
+    elseif getappdata(fig, 'sfxAutoOff')
+      rows = [rows, {'', 'Effects were turned off: too slow on this computer'}];
     endif
     show_screen(ax, 'SOUND', 'Each level has its own music', {rows}, '', ...
                 'M / E: change        ENTER: back');
@@ -797,7 +855,11 @@ audio = audio_init(audioFs);                    % audio.ok is false if there is 
 setappdata(fig, 'audio', audio);
 setappdata(fig, 'musicOn', true);               % sound settings (keys M and E)
 setappdata(fig, 'sfxOn', true);
-setappdata(fig, 'musicTrack', 0);               % music being played (0 = none)
+setappdata(fig, 'musicTrack', 0);               % music wanted (0 = none)
+setappdata(fig, 'musicPlaying', 0);             % music really playing (0 = none)
+setappdata(fig, 'musicTic', tic());             % start time of the music (loop timer)
+setappdata(fig, 'sfxSlow', 0);                  % number of effects that slowed the game
+setappdata(fig, 'sfxAutoOff', false);           % true if the effects were turned off automatically
 setappdata(fig, 'menuDirty', false);            % true when the pause menu text must be redrawn
 
 set(fig, 'KeyPressFcn',   @(src, evt) key_press(src, evt));    % key pressed
@@ -863,7 +925,7 @@ while keepPlaying && ishandle(fig)
     virDir    = ones(1, nViruses);              % walking direction (+1 / -1)
     virAlive  = true(1, nViruses);
     virYnow   = virY0 + virBob .* sin(virPh);   % current height of the viruses
-    platW     = movingPlats(:, 4)';                       % platform widths
+    platW     = movingPlats(:, 4)';             % platform widths
     t         = 0;                              % time counter of the level (in frames)
     platX     = movingPlats(:, 2)' + movingPlats(:, 5)' .* sin(movingPlats(:, 7)' * t + movingPlats(:, 8)');  % platform center x
     platTop   = movingPlats(:, 3)' + movingPlats(:, 6)' .* sin(movingPlats(:, 7)' * t + movingPlats(:, 8)');  % platform top y
@@ -889,7 +951,7 @@ while keepPlaying && ishandle(fig)
 
     % ---- Draw the level (few big patches = fast drawing) --------------------
     set(fig, 'Color', skyColors(level, :));
-    setappdata(fig, 'screenShown', false);    % the text screen is replaced by the game
+    setappdata(fig, 'screenShown', false);      % the text screen is replaced by the game
     cla(ax); axis(ax, [0 100 -12 48]); axis(ax, 'off'); hold(ax, 'on');
 
     cloudColor = min(skyColors(level, :) + 0.25, 1);           % clouds lighter than the sky
@@ -1034,7 +1096,6 @@ while keepPlaying && ishandle(fig)
     visDrawn = true; goldDrawn = false;         % last drawn player look
     camDrawn = -1; livesDrawn = lives;          % last drawn camera and hearts
     hudDrawn = '';                              % last drawn HUD text
-    musicTick = 0;                              % frame counter to keep the music looping
     setappdata(fig, 'jumpRequested', false);
     setappdata(fig, 'keys', [false false]);     % avoid a key stuck from the previous level
     setappdata(fig, 'paused', false);
@@ -1064,7 +1125,7 @@ while keepPlaying && ishandle(fig)
           set(hMsg, 'String', pause_text(fig));
           setappdata(fig, 'menuDirty', false);
         endif
-        music_apply(fig);                       % the music keeps playing during the pause
+        music_loop(fig);                        % the music keeps playing during the pause
         drawnow();
         pause(0.1);
         continue;
@@ -1116,9 +1177,9 @@ while keepPlaying && ishandle(fig)
                    py + playerH > solids(:,2) & py < solids(:,4) - 1e-6);
       for k = hitX(:)'
         if vx > 0
-          pxNew = solids(k,1) - playerW/2;           % stopped by the left side of the solid
+          pxNew = solids(k,1) - playerW/2;      % stopped by the left side of the solid
         elseif vx < 0
-          pxNew = solids(k,3) + playerW/2;           % stopped by the right side of the solid
+          pxNew = solids(k,3) + playerW/2;      % stopped by the right side of the solid
         endif
       endfor
       px = max(pxNew, playerW/2);               % left wall of the world
@@ -1134,7 +1195,7 @@ while keepPlaying && ishandle(fig)
         land = find(px + playerW/2 > solids(:,1) & px - playerW/2 < solids(:,3) & ...
                     py >= solids(:,4) - 1e-6 & pyNew < solids(:,4));
         if ~isempty(land)
-          landTop = max(solids(land, 4));            % highest solid under the player
+          landTop = max(solids(land, 4));       % highest solid under the player
         endif
         plHit = find(px + playerW/2 > platX - platW/2 & px - playerW/2 < platX + platW/2 & ...
                      py >= platTop - 0.05 & pyNew <= platTop);
@@ -1155,7 +1216,7 @@ while keepPlaying && ishandle(fig)
         bump = find(px + playerW/2 > solids(:,1) & px - playerW/2 < solids(:,3) & ...
                     py + playerH <= solids(:,2) + 1e-6 & pyNew + playerH > solids(:,2));
         if ~isempty(bump)
-          pyNew = min(solids(bump, 2)) - playerH;    % head hits a solid
+          pyNew = min(solids(bump, 2)) - playerH;  % head hits a solid
           vy = 0;
           play_sfx(fig, 'bump');                % SOUND: head hits a block
         endif
@@ -1391,11 +1452,8 @@ while keepPlaying && ishandle(fig)
         hudDrawn = hud;
       endif
 
-      % Music: restart it when the pattern is finished (loop), a few times per second
-      musicTick = musicTick + 1;
-      if mod(musicTick, 4) == 0
-        music_apply(fig);
-      endif
+      % Music: restart it when it is finished (loop), with a timer
+      music_loop(fig);
 
       drawnow();
       rest = framePause - toc(lastTic);         % wait only the time left in the frame
