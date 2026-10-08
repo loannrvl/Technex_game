@@ -10,8 +10,8 @@
 %               the code, thinking about and adding improvements
 % DATE        : 2026-10-08 (format yyyy-mm-dd: year-month-day)
 % OCTAVE      : version 10.1.0 / CODE VERSION : 5.0 (final version)
-% SOURCES     : AI used (Claude, ChatGPT) for code structure, debugging and fixes, checked
-%               and adapted by authors;
+% SOURCES     : AI (Claude, ChatGPT) used to write a large part of the code; the authors
+%               tested the game, found errors, chose the changes and improvements, and  checked and adapted the code;
 %               no image, no sound, no word list (all graphics are drawn with code)
 %
 % GAME COMPONENTS : player (pink brain with eyes, pupils and a smile, it GROWS at each level
