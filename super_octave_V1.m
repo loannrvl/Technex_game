@@ -1,11 +1,11 @@
 % ========================================================================
-% PROGRAM     : super_octave_VF.m
+% PROGRAM     : super_octave_V1.m
 % GOAL        : Run and jump through 5 levels, stomp enemies, collect coins, reach the flag
 % CONTEXT     : Octave course project, 2.5D platformer
-% AUTHORS     : [Name 1] (...), [Name 2] (...)
-% DATE        : [yyyy-mm-dd] (year-month-day)
-% OCTAVE      : version [x.x.x] / CODE VERSION : 1.0
-% SOURCES     : [AI used (e.g. Claude, Anthropic) for code structure, checked and adapted by authors];
+% AUTHORS     : [Loann RAVEL] (...), [Loïc LOBLOT] (...)
+% DATE        : [2026-10-1] 
+% OCTAVE      : version [2.50.1] / CODE VERSION : 1.0
+% SOURCES     : [AI used (Claude, ChatGPT) for code structure, checked and adapted by authors];
 %               no image, no sound, no word list
 %
 % GAME COMPONENTS : player (blue square), ground, blocks, holes, enemies, coins, flag
